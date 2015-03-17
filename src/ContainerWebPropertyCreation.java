@@ -23,23 +23,33 @@ import com.google.api.services.analytics.Analytics;
 import com.google.api.services.analytics.AnalyticsScopes;
 import com.google.api.services.analytics.model.Account;
 import com.google.api.services.analytics.model.Accounts;
+import com.google.api.services.analytics.model.EntityUserLink;
+import com.google.api.services.analytics.model.EntityUserLink.Permissions;
+import com.google.api.services.analytics.model.Profile;
+import com.google.api.services.analytics.model.UserRef;
 import com.google.api.services.analytics.model.Webproperty;
 import com.google.api.services.tagmanager.TagManager;
 import com.google.api.services.tagmanager.TagManagerScopes;
+import com.google.api.services.tagmanager.model.AccountAccess;
 import com.google.api.services.tagmanager.model.Condition;
 import com.google.api.services.tagmanager.model.Container;
+import com.google.api.services.tagmanager.model.ContainerAccess;
 import com.google.api.services.tagmanager.model.CreateContainerVersionRequestVersionOptions;
 import com.google.api.services.tagmanager.model.CreateContainerVersionResponse;
+import com.google.api.services.tagmanager.model.ListAccountUsersResponse;
+import com.google.api.services.tagmanager.model.ListAccountsResponse;
 import com.google.api.services.tagmanager.model.ListMacrosResponse;
 import com.google.api.services.tagmanager.model.Macro;
 import com.google.api.services.tagmanager.model.Parameter;
 import com.google.api.services.tagmanager.model.Rule;
 import com.google.api.services.tagmanager.model.Tag;
+import com.google.api.services.tagmanager.model.UserAccess;
 
 public class ContainerWebPropertyCreation {
-	private static final String GTM_ALCON_CONTAINER_ID = "958213";
-	private static final String GTM_ALCON_ACCOUNT_ID = "36837426";
-	private static final String GTM_CONTAINER_PREFIX = "GTM ";
+	private static final String GTM_ALCON_CONTAINER_ID 	= "958213";
+	private static final String GTM_ALCON_ACCOUNT_ID 	= "36837426";
+	private static final String GTM_CONTAINER_PREFIX 	= "GTM ";
+	private static final String GA_CONTAINER_PREFIX 	= "GA ";
 
 	// Path to client_secrets.json file downloaded from the Developer's Console.
 	private static final String CLIENT_SECRET_JSON_RESOURCE = "client_secrets.json";
@@ -60,6 +70,7 @@ public class ContainerWebPropertyCreation {
 	private static String timeZone;
 	private static String GTMAccountId;
 	private static String GAAccountId;
+	private static String[] users;
 
 	public static void main(String[] args) {
 		try {
@@ -89,9 +100,20 @@ public class ContainerWebPropertyCreation {
 
 			System.out.print("Enter GTM Account ID: ");
 			GTMAccountId = System.console().readLine().trim();
+			if (GTMAccountId.isEmpty()) {
+				System.out.println("GTM Account ID is mandatory");
+				System.exit(1);
+			}
 
 			System.out.print("Enter GA Account ID: ");
 			GAAccountId = System.console().readLine().trim();
+			if (GAAccountId.isEmpty()) {
+				System.out.println("GA Account ID is mandatory");
+				System.exit(1);
+			}
+			
+			System.out.print("Enter user's email to be added [comma separated list]: ");
+			users = System.console().readLine().trim().split(",");
 
 			httpTransport = GoogleNetHttpTransport.newTrustedTransport();
 			dataStoreFactory = new FileDataStoreFactory(DATA_STORE_DIR);
@@ -107,16 +129,15 @@ public class ContainerWebPropertyCreation {
 					APPLICATION_NAME).build();
 
 			// Get tag manager account ID.
-			GTMAccountId = "56599124"; // TODO remove
+			//GTMAccountId = "56599124"; // for testing
 
 			// Get analytics account ID
-			GAAccountId = "60767497"; // TODO remove
+			//GAAccountId = "60767497"; // for testing
 
 			// Create new GA Web Property for GAAccountId
-			// TODO uncomment
-			//System.out.print("Creating new GA Web Property for account " + GAAccountId + ": " );
-			//Webproperty wp = createGAWebProperty(analytics, GAAccountId);
-			//System.out.println("[" + wp.getId() + "]");
+			System.out.print("Creating new GA Web Property for account " + GAAccountId + ": " );
+			Webproperty wp = createGAWebProperty(analytics, GAAccountId);
+			System.out.println("[" + wp.getId() + "]");
 
 			// Create new GTM Container for GTMAccountId
 			System.out.print("Creating new GTM Container for account " + GTMAccountId + ": " );
@@ -125,12 +146,8 @@ public class ContainerWebPropertyCreation {
 
 			// Create new Universal Analytics tag for GTM Container containerId
 			System.out.print("Creating new Universal Analytics tag for GTM Container " + containerId + ": " );
-			// TODO uncomment
-			// Tag ua = createUniversalAnalyticsTag(GTMAccountId, containerId,
-			// wp.getId(), manager);
-			// TODO remove
 			Tag ua = createUniversalAnalyticsTag(GTMAccountId, containerId,
-					"UA-60767497-1", manager);
+					wp.getId(), manager);
 
 			// Create default macros from existing container
 			createDefaultMacros(manager, GTMAccountId, containerId);
@@ -144,7 +161,11 @@ public class ContainerWebPropertyCreation {
 					.update(GTMAccountId, containerId, ua.getTagId(), ua)
 					.execute();
 			System.out.println("[Ok]");
-
+			
+			System.out.print("Adding User permissions to GTM Container and GA Web Property: " );
+			addUsersPermission(manager, analytics, wp, containerId);
+			System.out.println("[Ok]");
+			
 			// Create a version and publish automatically
 			System.out.print("Creating a new version for the GTM Container " + containerId + ": " );
 			createFirstVersionAndPublish(manager, containerId);
@@ -152,6 +173,58 @@ public class ContainerWebPropertyCreation {
 
 		} catch (Exception e) {
 			e.printStackTrace();
+		}
+	}
+
+	private static void addUsersPermission(TagManager manager,
+			Analytics analytics, Webproperty wp, String containerId)
+			throws IOException {
+		for (String user : users) {
+			if (user == null || user.length() == 0) {
+				continue;
+			}
+			try {
+				user = user.trim();
+					
+				// GA permission
+				// Construct the user reference object.
+				UserRef userRef = new UserRef();
+				userRef.setEmail(user);
+
+				// Construct the permissions object.
+				Permissions permissions = new Permissions();
+				List<String> local = Arrays.asList("edit");
+				permissions.setLocal(local);
+
+				// Construct the body of the request
+				EntityUserLink body = new EntityUserLink();
+				body.setPermissions(permissions);
+				body.setUserRef(userRef);
+
+				analytics.management().webpropertyUserLinks().insert(GAAccountId, wp.getId(),
+						body).execute();
+				
+				// GTM permission
+				// Construct the container access object.
+				ContainerAccess container = new ContainerAccess();
+				container.setContainerId(containerId);
+				container.setPermission(Arrays.asList("read", "edit", "delete", "publish"));
+
+				// Construct the account access object.
+				AccountAccess account = new AccountAccess();
+				account.setPermission(Arrays.asList("read"));
+
+				// Construct the user access object.
+				UserAccess userAccess = new UserAccess();
+				userAccess.setEmailAddress(user);
+				userAccess.setAccountAccess(account);
+				userAccess.setContainerAccess(Arrays.asList(container));
+				
+				manager.accounts().permissions().create(GTMAccountId, userAccess).execute();
+			} catch (Exception e) {
+				System.out.println("");
+				System.out.print(user + " is not a valid Google Account ");
+			}
 		}
 	}
 
@@ -216,11 +289,21 @@ public class ContainerWebPropertyCreation {
 
 		Webproperty body = new Webproperty();
 		body.setWebsiteUrl(domainUrl);
-		body.setName(projectName);
+		body.setName(GA_CONTAINER_PREFIX + projectName);
 		body.setIndustryVertical("HEALTHCARE");
 
-		return analytics.management().webproperties()
+		body = analytics.management().webproperties()
 				.insert(account.getId(), body).execute();
+		
+		// Construct the body of the View request and set its properties.
+		Profile profile = new Profile();
+		profile.setName("All Web Site Data");
+		profile.setTimezone(timeZone);
+
+		analytics.management().profiles().insert(accountIdGa, body.getId(),
+		      profile).execute();
+		
+		return body;
 	}
 
 	private static Credential authorize() throws Exception {
