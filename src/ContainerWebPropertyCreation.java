@@ -36,8 +36,6 @@ import com.google.api.services.tagmanager.model.Container;
 import com.google.api.services.tagmanager.model.ContainerAccess;
 import com.google.api.services.tagmanager.model.CreateContainerVersionRequestVersionOptions;
 import com.google.api.services.tagmanager.model.CreateContainerVersionResponse;
-import com.google.api.services.tagmanager.model.ListAccountUsersResponse;
-import com.google.api.services.tagmanager.model.ListAccountsResponse;
 import com.google.api.services.tagmanager.model.ListMacrosResponse;
 import com.google.api.services.tagmanager.model.Macro;
 import com.google.api.services.tagmanager.model.Parameter;
